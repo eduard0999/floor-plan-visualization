@@ -1,3 +1,4 @@
+
 from __future__ import annotations
 from typing import Dict, List, Tuple
 from rooms import Room, RoomType, FloorPlan, Appliance
@@ -39,29 +40,25 @@ BASELINE_APPLIANCES: Dict[RoomType, Dict[str, Tuple[float, float]]] = {
     },
 }
 
-
 def room_daily_kwh(room: Room) -> float:
-    """Estimate daily kWh for a room using baseline + custom appliances, multiplied by usage_scale."""
+    """Estimate daily kWh; if room.custom_kwh_per_day is set, use it."""
+    if room.custom_kwh_per_day is not None:
+        return max(0.0, float(room.custom_kwh_per_day))
+
     baseline = BASELINE_APPLIANCES.get(room.room_type, {})
     total_wh = 0.0
-
     # Baseline
     for watts, hours in baseline.values():
         total_wh += watts * hours
-
     # Custom appliances
     for a in room.custom_appliances:
         total_wh += a.watts * a.hours_per_day
-
     # Usage scale multiplier
     total_wh *= max(0.0, room.usage_scale)
-
     return total_wh / 1000.0  # Wh -> kWh
-
 
 def floor_daily_kwh(fp: FloorPlan) -> float:
     return sum(room_daily_kwh(r) for r in fp.rooms)
-
 
 def build_heatmap(fp: FloorPlan) -> List[List[float]]:
     """
@@ -82,7 +79,6 @@ def build_heatmap(fp: FloorPlan) -> List[List[float]]:
                     continue
                 grid[y][x] += per_cell
     return grid
-
 
 def max_cell_value(grid: List[List[float]]) -> float:
     m = 0.0

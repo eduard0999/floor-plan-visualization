@@ -1,10 +1,10 @@
+
 from __future__ import annotations
-from dataclasses import dataclass, field, asdict
+from dataclasses import dataclass, field
 from enum import Enum
 from typing import List, Dict, Optional
 import uuid
 import json
-
 
 class RoomType(Enum):
     KITCHEN = "Kitchen"
@@ -15,7 +15,6 @@ class RoomType(Enum):
     HALLWAY = "Hallway"
     UTILITY = "Utility"
 
-
 ROOM_COLORS = {
     RoomType.KITCHEN: (250, 180, 60),
     RoomType.BATHROOM: (120, 200, 255),
@@ -25,7 +24,6 @@ ROOM_COLORS = {
     RoomType.HALLWAY: (210, 210, 210),
     RoomType.UTILITY: (200, 160, 120),
 }
-
 
 @dataclass
 class Appliance:
@@ -40,7 +38,6 @@ class Appliance:
     def from_dict(d: Dict) -> "Appliance":
         return Appliance(d["name"], float(d["watts"]), float(d["hours_per_day"]))
 
-
 @dataclass
 class Room:
     id: str
@@ -51,6 +48,8 @@ class Room:
     gh: int  # grid height
     usage_scale: float = 1.0
     custom_appliances: List[Appliance] = field(default_factory=list)
+    # NEW: Optional per-room override for final kWh/day
+    custom_kwh_per_day: Optional[float] = None
 
     @property
     def area_cells(self) -> int:
@@ -69,6 +68,8 @@ class Room:
             "gh": self.gh,
             "usage_scale": self.usage_scale,
             "custom_appliances": [a.to_dict() for a in self.custom_appliances],
+            # NEW
+            "custom_kwh_per_day": self.custom_kwh_per_day,
         }
 
     @staticmethod
@@ -82,8 +83,9 @@ class Room:
             gh=int(d["gh"]),
             usage_scale=float(d.get("usage_scale", 1.0)),
             custom_appliances=[Appliance.from_dict(a) for a in d.get("custom_appliances", [])],
+            # NEW
+            custom_kwh_per_day=(float(d["custom_kwh_per_day"]) if d.get("custom_kwh_per_day") is not None else None),
         )
-
 
 class FloorPlan:
     def __init__(self, grid_w: int, grid_h: int):

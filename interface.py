@@ -1,3 +1,4 @@
+
 from __future__ import annotations
 import pygame
 from pygame import Surface, SRCALPHA
@@ -7,21 +8,17 @@ import uuid
 from rooms import Room, RoomType, FloorPlan, ROOM_COLORS
 from enerycalc import build_heatmap, max_cell_value, floor_daily_kwh, room_daily_kwh
 
-
 class EnergyVisualizerApp:
     def __init__(self, screen: Surface, grid_w: int = 40, grid_h: int = 25, cell_px: int = 24):
         self.screen = screen
         self.W, self.H = screen.get_size()
-
         self.grid_w = grid_w
         self.grid_h = grid_h
         self.cell_px = cell_px
-
         self.margin_left = 16
         self.margin_top = 16
 
         self.fp = FloorPlan(grid_w, grid_h)
-
         self.clock = pygame.time.Clock()
         self.font = pygame.font.SysFont("consolas", 16)
 
@@ -33,6 +30,10 @@ class EnergyVisualizerApp:
         self.drag_start_cell: Optional[Tuple[int, int]] = None
         self.selected_room: Optional[Room] = None
         self.heatmap_cache = None  # (grid, max) cached per frame if needed
+
+        # Numeric input for per-room kWh/day override
+        self.kwh_input_active = False
+        self.kwh_input_buffer = ""
 
     # ---------- Utility ----------
     def cell_to_px(self, cx: int, cy: int) -> Tuple[int, int]:
@@ -46,8 +47,12 @@ class EnergyVisualizerApp:
         return int(cx), int(cy)
 
     def grid_rect_px(self) -> pygame.Rect:
-        return pygame.Rect(self.margin_left, self.margin_top,
-                           self.grid_w * self.cell_px, self.grid_h * self.cell_px)
+        return pygame.Rect(
+            self.margin_left,
+            self.margin_top,
+            self.grid_w * self.cell_px,
+            self.grid_h * self.cell_px
+        )
 
     # ---------- Drawing ----------
     def draw_grid(self):
@@ -77,7 +82,10 @@ class EnergyVisualizerApp:
             # Room label
             label = f"{r.room_type.value}"
             kwh = room_daily_kwh(r)
-            label2 = f"{kwh:.2f} kWh/d x{r.usage_scale:.2f}"
+            if r.custom_kwh_per_day is not None:
+                label2 = f"{kwh:.2f} kWh/d (custom)"
+            else:
+                label2 = f"{kwh:.2f} kWh/d x{r.usage_scale:.2f}"
             txt = self.font.render(label, True, (15, 15, 15))
             txt2 = self.font.render(label2, True, (15, 15, 15))
             self.screen.blit(txt, (x + 6, y + 4))
@@ -85,7 +93,7 @@ class EnergyVisualizerApp:
 
             # Selection outline
             if self.selected_room and self.selected_room.id == r.id:
-                pygame.draw.rect(self.screen, (255, 255, 0), (x-2, y-2, w+4, h+4), 2)
+                pygame.draw.rect(self.screen, (255, 255, 0), (x - 2, y - 2, w + 4, h + 4), 2)
 
     def draw_drag_preview(self):
         if not self.dragging or self.drag_start_cell is None:
@@ -97,7 +105,6 @@ class EnergyVisualizerApp:
         gy = min(sy, cy)
         gw = abs(cx - sx) + 1
         gh = abs(cy - sy) + 1
-
         x, y = self.cell_to_px(gx, gy)
         w = gw * self.cell_px
         h = gh * self.cell_px
@@ -110,12 +117,10 @@ class EnergyVisualizerApp:
             return
         rect = self.grid_rect_px()
         overlay = pygame.Surface((rect.width, rect.height), SRCALPHA)
-
         grid = build_heatmap(self.fp)
         m = max_cell_value(grid)
         if m <= 1e-9:
             return
-
         for y in range(self.grid_h):
             for x in range(self.grid_w):
                 v = grid[y][x] / m  # normalize 0..1
@@ -123,7 +128,6 @@ class EnergyVisualizerApp:
                 rx = x * self.cell_px
                 ry = y * self.cell_px
                 pygame.draw.rect(overlay, color, (rx, ry, self.cell_px, self.cell_px))
-
         self.screen.blit(overlay, (self.margin_left, self.margin_top))
 
     def draw_hud(self):
@@ -133,6 +137,7 @@ class EnergyVisualizerApp:
             "[LClick-Drag] Add room, [RClick] Delete room under cursor",
             "[H] Heatmap  [G] Grid  [S] Save  [L] Load",
             "[Click room to select]  [ [ / ] ] Usage scale",
+            "[E] Edit kWh/day (custom override)   [C] Clear override",
             f"Rooms: {len(self.fp.rooms)}   Total: {total:.2f} kWh/day",
         ]
         y = 8
@@ -145,18 +150,35 @@ class EnergyVisualizerApp:
     def value_to_color(self, t: float, alpha: int = 180) -> Tuple[int, int, int, int]:
         """Blue (cool) -> Yellow -> Red (hot) gradient for heatmap."""
         t = max(0.0, min(1.0, t))
-        # Simple 3-segment gradient: blue (0,0,255) -> yellow (255,255,0) -> red (255,0,0)
+        # Blue (0,0,255) -> Yellow (255,255,0) -> Red (255,0,0)
         if t < 0.5:
             k = t / 0.5  # 0..1
-            r = int(0 + (255 * k))
-            g = int(0 + (255 * k))
-            b = int(255 - (255 * k))
+            r = int(255 * k)
+            g = int(255 * k)
+            b = int(255 - 255 * k)
         else:
             k = (t - 0.5) / 0.5
             r = 255
-            g = int(255 - (255 * k))
+            g = int(255 - 255 * k)
             b = 0
         return (r, g, b, alpha)
+
+    # ---------- Numeric input helpers ----------
+    def start_kwh_input(self):
+        if self.selected_room:
+            self.kwh_input_active = True
+            self.kwh_input_buffer = ""
+
+    def commit_kwh_input(self):
+        if self.selected_room and self.kwh_input_active:
+            txt = self.kwh_input_buffer.strip()
+            try:
+                val = float(txt)
+                self.selected_room.custom_kwh_per_day = max(0.0, val)
+            except ValueError:
+                pass
+        self.kwh_input_active = False
+        self.kwh_input_buffer = ""
 
     # ---------- Events ----------
     def handle_mouse_down(self, event: pygame.event.Event):
@@ -172,24 +194,21 @@ class EnergyVisualizerApp:
             r = self.fp.room_at(cx, cy)
             if r:
                 self.fp.remove_room(r.id)
-                if self.selected_room and self.selected_room.id == r.id:
-                    self.selected_room = None
+            if self.selected_room and r and self.selected_room.id == r.id:
+                self.selected_room = None
 
     def handle_mouse_up(self, event: pygame.event.Event):
         if event.button != 1:
             return
         if not self.dragging or self.drag_start_cell is None:
             return
-
         mx, my = event.pos
         cx, cy = self.px_to_cell(mx, my)
         sx, sy = self.drag_start_cell
-
         gx = min(sx, cx)
         gy = min(sy, cy)
         gw = abs(cx - sx) + 1
         gh = abs(cy - sy) + 1
-
         # Only add if inside grid
         if gx < self.grid_w and gy < self.grid_h and gx >= 0 and gy >= 0:
             new_room = Room(
@@ -202,23 +221,43 @@ class EnergyVisualizerApp:
             )
             self.fp.add_room(new_room)
             self.selected_room = new_room
-
         self.dragging = False
         self.drag_start_cell = None
 
     def handle_keydown(self, event: pygame.event.Event):
+        # If editing kWh/day, capture numeric input first
+        if self.kwh_input_active:
+            if event.key == pygame.K_RETURN:
+                self.commit_kwh_input()
+                return
+            elif event.key == pygame.K_ESCAPE:
+                self.kwh_input_active = False
+                self.kwh_input_buffer = ""
+                return
+            elif event.key == pygame.K_BACKSPACE:
+                self.kwh_input_buffer = self.kwh_input_buffer[:-1]
+                return
+            else:
+                ch = event.unicode
+                if ch and (ch.isdigit() or ch in "."):
+                    self.kwh_input_buffer += ch
+                return
+
+        # Normal shortcuts
         if event.key == pygame.K_h:
             self.show_heatmap = not self.show_heatmap
+
         elif event.key == pygame.K_g:
             self.show_grid = not self.show_grid
+
         elif event.key == pygame.K_s:
             self.fp.save("floorplan.json")
             print("Saved to floorplan.json")
+
         elif event.key == pygame.K_l:
             try:
                 self.fp = FloorPlan.load("floorplan.json")
                 print("Loaded floorplan.json")
-                # Note: selected room reset
                 self.selected_room = None
             except Exception as e:
                 print("Failed to load floorplan.json:", e)
@@ -240,14 +279,26 @@ class EnergyVisualizerApp:
             self.current_room_type = RoomType.UTILITY
 
         # Usage scale adjust on selected room
-        elif event.key == pygame.K_LEFTBRACKET:      # '['
+        elif event.key == pygame.K_LEFTBRACKET:  # '['
             if self.selected_room:
-                self.selected_room.usage_scale = max(0.25, round(self.selected_room.usage_scale - 0.25, 2))
-        elif event.key == pygame.K_RIGHTBRACKET:     # ']'
-            if self.selected_room:
-                self.selected_room.usage_scale = min(4.0, round(self.selected_room.usage_scale + 0.25, 2))
+                self.selected_room.usage_scale = max(
+                    0.25, round(self.selected_room.usage_scale - 0.25, 2)
+                )
 
-    # ---------- Main loop ----------
+        elif event.key == pygame.K_RIGHTBRACKET:  # ']'
+            if self.selected_room:
+                self.selected_room.usage_scale = min(
+                    4.0, round(self.selected_room.usage_scale + 0.25, 2)
+                )
+
+        # Edit / Clear per-room kWh/day override
+        elif event.key == pygame.K_e:
+            self.start_kwh_input()
+
+        elif event.key == pygame.K_c:
+            if self.selected_room:
+                self.selected_room.custom_kwh_per_day = None
+
     def handle_events(self) -> bool:
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
@@ -270,6 +321,13 @@ class EnergyVisualizerApp:
         self.draw_drag_preview()
         self.draw_grid()
         self.draw_hud()
+
+        # Input prompt while editing kWh/day
+        if self.kwh_input_active and self.selected_room:
+            prompt = f"Set kWh/day for {self.selected_room.room_type.value}: {self.kwh_input_buffer}"
+            overlay = self.font.render(prompt, True, (255, 220, 150))
+            self.screen.blit(overlay, (8, self.H - 28))
+
         pygame.display.flip()
 
     def run(self):
