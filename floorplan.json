@@ -1,0 +1,116 @@
+{
+  "grid_w": 40,
+  "grid_h": 25,
+  "rooms": [
+    {
+      "id": "c29357c5-0d09-432c-aa47-d562cf6a4bb9",
+      "room_type": "Kitchen",
+      "gx": 1,
+      "gy": 6,
+      "gw": 12,
+      "gh": 6,
+      "usage_scale": 1.0,
+      "custom_appliances": [],
+      "custom_kwh_per_day": 22.0
+    },
+    {
+      "id": "3d914843-4b0c-4f22-8e0e-694f371123a2",
+      "room_type": "Living Room",
+      "gx": 13,
+      "gy": 6,
+      "gw": 11,
+      "gh": 6,
+      "usage_scale": 1.0,
+      "custom_appliances": [],
+      "custom_kwh_per_day": 16.0
+    },
+    {
+      "id": "3c23f9c5-2e56-4c0c-91cd-c5804d795fda",
+      "room_type": "Bedroom",
+      "gx": 18,
+      "gy": 12,
+      "gw": 6,
+      "gh": 5,
+      "usage_scale": 1.0,
+      "custom_appliances": [],
+      "custom_kwh_per_day": 7.0
+    },
+    {
+      "id": "3b3ce024-be95-40a6-8a46-f845d89b27c6",
+      "room_type": "Bathroom",
+      "gx": 18,
+      "gy": 17,
+      "gw": 6,
+      "gh": 3,
+      "usage_scale": 1.0,
+      "custom_appliances": [],
+      "custom_kwh_per_day": 3.0
+    },
+    {
+      "id": "eddb686a-d50e-4ec9-a5c5-d4329cc341b6",
+      "room_type": "Bedroom",
+      "gx": 18,
+      "gy": 20,
+      "gw": 6,
+      "gh": 5,
+      "usage_scale": 1.0,
+      "custom_appliances": [],
+      "custom_kwh_per_day": 7.0
+    },
+    {
+      "id": "a43ed86e-9d01-49ba-8e08-961435ee8c6a",
+      "room_type": "Hallway",
+      "gx": 1,
+      "gy": 22,
+      "gw": 17,
+      "gh": 3,
+      "usage_scale": 1.0,
+      "custom_appliances": [],
+      "custom_kwh_per_day": 1.0
+    },
+    {
+      "id": "a07afd44-ecfe-40f5-907a-33dfd741aded",
+      "room_type": "Office",
+      "gx": 1,
+      "gy": 12,
+      "gw": 7,
+      "gh": 4,
+      "usage_scale": 1.0,
+      "custom_appliances": [],
+      "custom_kwh_per_day": 10.0
+    },
+    {
+      "id": "ec1a2c78-edf4-44e2-83b1-6238c4c98561",
+      "room_type": "Bathroom",
+      "gx": 1,
+      "gy": 16,
+      "gw": 7,
+      "gh": 6,
+      "usage_scale": 1.0,
+      "custom_appliances": [],
+      "custom_kwh_per_day": 4.0
+    },
+    {
+      "id": "2a523bb7-81f6-4924-9b29-632be8458d77",
+      "room_type": "Bedroom",
+      "gx": 8,
+      "gy": 16,
+      "gw": 10,
+      "gh": 6,
+      "usage_scale": 1.0,
+      "custom_appliances": [],
+      "custom_kwh_per_day": 9.0
+    },
+    {
+      "id": "d2ef4806-64bb-47da-bf2b-e1e40f48e467",
+      "room_type": "Utility",
+      "gx": 8,
+      "gy": 12,
+      "gw": 10,
+      "gh": 4,
+      "usage_scale": 1.5,
+      "custom_appliances": [],
+      "custom_kwh_per_day": 20.0
+    }
+  ]
+}

@@ -81,9 +81,17 @@ def build_heatmap(fp: FloorPlan) -> List[List[float]]:
     return grid
 
 def max_cell_value(grid: List[List[float]]) -> float:
+    # Defensive: always return a float
+    if not grid or not isinstance(grid, list) or not grid[0]:
+        return 0.0
     m = 0.0
     for row in grid:
+        if not isinstance(row, list):
+            continue
         for v in row:
-            if v > m:
-                m = v
-    return m
+            try:
+                if v > m:
+                    m = v
+            except TypeError:
+                continue
+    return float(m)

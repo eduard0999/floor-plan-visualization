@@ -25,11 +25,13 @@ class EnergyVisualizerApp:
         # UI state
         self.current_room_type = RoomType.KITCHEN
         self.show_grid = True
-        self.show_heatmap = True
+        self.show_heatmap = False   # 'V' will show it
         self.dragging = False
         self.drag_start_cell: Optional[Tuple[int, int]] = None
         self.selected_room: Optional[Room] = None
-        self.heatmap_cache = None  # (grid, max) cached per frame if needed
+
+        # NEW: room color mode -> "type" (default colors) or "energy" (kWh-based colors)
+        self.color_mode = "type"
 
         # Numeric input for per-room kWh/day override
         self.kwh_input_active = False
@@ -71,11 +73,26 @@ class EnergyVisualizerApp:
             pygame.draw.line(self.screen, color, (rect.left, py), (rect.right, py), 1)
 
     def draw_rooms(self):
+        # Precompute normalization for energy color mode
+        vals = [room_daily_kwh(r) for r in self.fp.rooms] if self.fp.rooms else []
+        vmin = min(vals) if vals else 0.0
+        vmax = max(vals) if vals else 1.0
+        rng = max(1e-9, (vmax - vmin))
+
         for r in self.fp.rooms:
             x, y = self.cell_to_px(r.gx, r.gy)
             w = r.gw * self.cell_px
             h = r.gh * self.cell_px
-            base = ROOM_COLORS.get(r.room_type, (180, 180, 180))
+
+            # Fill color: either type color or kWh-based heat color
+            if self.color_mode == "energy":
+                kwh = room_daily_kwh(r)
+                t = (kwh - vmin) / rng  # 0..1
+                fill_r, fill_g, fill_b, _ = self.value_to_color(t, alpha=255)
+                base = (fill_r, fill_g, fill_b)
+            else:
+                base = ROOM_COLORS.get(r.room_type, (180, 180, 180))
+
             pygame.draw.rect(self.screen, base, (x, y, w, h))
             pygame.draw.rect(self.screen, (40, 40, 40), (x, y, w, h), 2)
 
@@ -115,28 +132,52 @@ class EnergyVisualizerApp:
     def draw_heatmap(self):
         if not self.show_heatmap:
             return
+
         rect = self.grid_rect_px()
         overlay = pygame.Surface((rect.width, rect.height), SRCALPHA)
+
+        # Build the per-cell kWh/day grid
         grid = build_heatmap(self.fp)
+
+        # Defensive checks for empty/invalid grids
+        if not grid or not isinstance(grid, list) or not grid[0]:
+            return  # nothing to draw
+
+        # Get max value; ensure it's a float
         m = max_cell_value(grid)
+        if m is None:
+            m = 0.0
+
+        # If no signal, skip drawing
         if m <= 1e-9:
             return
+
+        # Render normalized green->yellow->red cells (OVERLAY ON TOP OF ROOMS)
         for y in range(self.grid_h):
+            if y >= len(grid):
+                break
             for x in range(self.grid_w):
-                v = grid[y][x] / m  # normalize 0..1
+                if x >= len(grid[y]):
+                    continue
+                v_raw = grid[y][x]
+                v = v_raw / m  # normalize 0..1
                 color = self.value_to_color(v, alpha=140)
                 rx = x * self.cell_px
                 ry = y * self.cell_px
                 pygame.draw.rect(overlay, color, (rx, ry, self.cell_px, self.cell_px))
+
         self.screen.blit(overlay, (self.margin_left, self.margin_top))
 
     def draw_hud(self):
         total = floor_daily_kwh(self.fp)
+        mode_text = "Energy Colors" if self.color_mode == "energy" else "Type Colors"
         lines = [
-            f"[1-7] Type: {self.current_room_type.value}",
+            f"[1-7] Type: {self.current_room_type.value}   |   Room Color Mode: {mode_text} (press T to toggle)",
             "[LClick-Drag] Add room, [RClick] Delete room under cursor",
-            "[H] Heatmap  [G] Grid  [S] Save  [L] Load",
-            "[Click room to select]  [ [ / ] ] Usage scale",
+            "[V] Convert (show heatmap + energy colors)   [H] Hide/Show heatmap",
+            "[P] Save PNG (screenshot)   [Shift+P] Save Canvas-Only PNG",
+            "[G] Grid   [S] Save   [L] Load",
+            "[Click room to select]   [ [ / ] ] Usage scale",
             "[E] Edit kWh/day (custom override)   [C] Clear override",
             f"Rooms: {len(self.fp.rooms)}   Total: {total:.2f} kWh/day",
         ]
@@ -148,18 +189,19 @@ class EnergyVisualizerApp:
 
     # ---------- Color mapping ----------
     def value_to_color(self, t: float, alpha: int = 180) -> Tuple[int, int, int, int]:
-        """Blue (cool) -> Yellow -> Red (hot) gradient for heatmap."""
+        """Green (low) -> Yellow (mid) -> Red (high)."""
         t = max(0.0, min(1.0, t))
-        # Blue (0,0,255) -> Yellow (255,255,0) -> Red (255,0,0)
         if t < 0.5:
-            k = t / 0.5  # 0..1
+            # 0..0.5: green (0,255,0) -> yellow (255,255,0)
+            k = t / 0.5
             r = int(255 * k)
-            g = int(255 * k)
-            b = int(255 - 255 * k)
+            g = 255
+            b = 0
         else:
+            # 0.5..1.0: yellow (255,255,0) -> red (255,0,0)
             k = (t - 0.5) / 0.5
             r = 255
-            g = int(255 - 255 * k)
+            g = int(255 * (1.0 - k))
             b = 0
         return (r, g, b, alpha)
 
@@ -245,7 +287,22 @@ class EnergyVisualizerApp:
 
         # Normal shortcuts
         if event.key == pygame.K_h:
+            # Hide/Show heatmap
             self.show_heatmap = not self.show_heatmap
+
+        elif event.key == pygame.K_v:
+            # Convert: show heatmap AND switch to energy color mode
+            self.show_heatmap = True
+            self.color_mode = "energy"
+
+        elif event.key == pygame.K_t:
+            # Toggle room color mode
+            self.color_mode = "type" if self.color_mode == "energy" else "energy"
+
+        elif event.key == pygame.K_p:
+            # Save a screenshot PNG
+            pygame.image.save(self.screen, "floorplan_heatmap.png")
+            print("Saved floorplan_heatmap.png")
 
         elif event.key == pygame.K_g:
             self.show_grid = not self.show_grid
@@ -299,6 +356,49 @@ class EnergyVisualizerApp:
             if self.selected_room:
                 self.selected_room.custom_kwh_per_day = None
 
+        # Shift+P: save canvas-only (no HUD) PNG
+        elif event.key == pygame.K_p and (pygame.key.get_mods() & pygame.KMOD_SHIFT):
+            rect = self.grid_rect_px()
+            canvas = pygame.Surface((rect.width, rect.height))
+            # Fill background
+            canvas.fill((28, 28, 35))
+            # Rooms (using current color mode)
+            vals = [room_daily_kwh(r) for r in self.fp.rooms] if self.fp.rooms else []
+            vmin = min(vals) if vals else 0.0
+            vmax = max(vals) if vals else 1.0
+            rng = max(1e-9, (vmax - vmin))
+            for r in self.fp.rooms:
+                x = r.gx * self.cell_px
+                y = r.gy * self.cell_px
+                w = r.gw * self.cell_px
+                h = r.gh * self.cell_px
+                if self.color_mode == "energy":
+                    kwh = room_daily_kwh(r)
+                    t = (kwh - vmin) / rng
+                    R, G, B, _ = self.value_to_color(t, alpha=255)
+                    base = (R, G, B)
+                else:
+                    base = ROOM_COLORS.get(r.room_type, (180, 180, 180))
+                pygame.draw.rect(canvas, base, (x, y, w, h))
+                pygame.draw.rect(canvas, (40, 40, 40), (x, y, w, h), 2)
+            # Heatmap overlay
+            grid = build_heatmap(self.fp)
+            m = max_cell_value(grid) or 0.0
+            if m > 1e-9:
+                overlay = pygame.Surface((rect.width, rect.height), SRCALPHA)
+                for y in range(self.grid_h):
+                    if y >= len(grid):
+                        break
+                    for x in range(self.grid_w):
+                        if x >= len(grid[y]):
+                            continue
+                        v = grid[y][x] / m
+                        color = self.value_to_color(v, alpha=140)
+                        pygame.draw.rect(overlay, color, (x * self.cell_px, y * self.cell_px, self.cell_px, self.cell_px))
+                canvas.blit(overlay, (0, 0))
+            pygame.image.save(canvas, "floorplan_canvas.png")
+            print("Saved floorplan_canvas.png")
+
     def handle_events(self) -> bool:
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
@@ -316,8 +416,9 @@ class EnergyVisualizerApp:
 
     def render(self):
         self.screen.fill((28, 28, 35))
-        self.draw_heatmap()
+        # IMPORTANT: draw rooms first, then heatmap on top (so rooms get tinted)
         self.draw_rooms()
+        self.draw_heatmap()
         self.draw_drag_preview()
         self.draw_grid()
         self.draw_hud()

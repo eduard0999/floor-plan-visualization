@@ -48,7 +48,7 @@ class Room:
     gh: int  # grid height
     usage_scale: float = 1.0
     custom_appliances: List[Appliance] = field(default_factory=list)
-    # NEW: Optional per-room override for final kWh/day
+    # Optional per-room override for final kWh/day
     custom_kwh_per_day: Optional[float] = None
 
     @property
@@ -68,7 +68,6 @@ class Room:
             "gh": self.gh,
             "usage_scale": self.usage_scale,
             "custom_appliances": [a.to_dict() for a in self.custom_appliances],
-            # NEW
             "custom_kwh_per_day": self.custom_kwh_per_day,
         }
 
@@ -83,7 +82,6 @@ class Room:
             gh=int(d["gh"]),
             usage_scale=float(d.get("usage_scale", 1.0)),
             custom_appliances=[Appliance.from_dict(a) for a in d.get("custom_appliances", [])],
-            # NEW
             custom_kwh_per_day=(float(d["custom_kwh_per_day"]) if d.get("custom_kwh_per_day") is not None else None),
         )
 
